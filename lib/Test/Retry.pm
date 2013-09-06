@@ -4,8 +4,39 @@ use strict;
 use warnings;
 
 our $VERSION = "0.01";
+use parent "Exporter";
 
+our @EXPORT = qw(retry);
 
+sub retry {
+    my ($times, $delay, $code) = @_;
+    sub {
+        my $builder = Test::Builder->new;
+
+        my $old_test_results = $builder->{Test_Results};
+        my $old_curr_test    = $builder->{Curr_Test};
+
+        for my $i (1..$times) {
+            eval { $code->() };
+            my $new_test_results = $builder->{Test_Results};
+            my $new_curr_test    = $builder->{Curr_Test};
+            my @new_failed_num   = grep { !$_->{'ok'} } @{$new_test_results}[ 0 .. $new_curr_test - 1 ];
+
+            if ($@ || scalar(@new_failed_num)) {
+                $builder->diag($@) if $@;
+
+                # rollback
+                $builder->{Test_Results} = $old_test_results;
+                $builder->{Curr_Test}    = $old_curr_test;
+                next;
+            }
+
+            $builder->is_passing(1);
+            return 1;
+        }
+
+    };
+}
 
 1;
 __END__
